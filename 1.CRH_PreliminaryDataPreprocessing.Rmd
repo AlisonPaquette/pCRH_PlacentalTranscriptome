@@ -1,0 +1,734 @@
+---
+title: "CRHAnalysis_PreliminaryDataProcessing"
+author: "Alison Paquette"
+date: "8/15/2022"
+output: html_document
+---
+
+# Load packages
+```{r}
+library(edgeR)
+library(limma)
+library(tidyverse)
+library(graphics)
+```
+
+
+# Load downloaded Data
+ 
+ P0088 was recieved from ECHO Pathways Data team 1/23/2022
+ RNA sequencing Data was recieved from Jim MacDonald 8/12/2022
+ 
+ CRH Values @ birth recieved from Jim 3/6/2023 (Using Random Slope, Random Intercept, see email thread)
+```{r}
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/RawData/candle_20200226.Rdata")
+rownames(batches)<-colnames(candle_counts$counts)
+
+
+Covar_OG<-read.csv("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/RawData/p0088_data.csv")
+rownames(Covar_OG)<-Covar_OG$pathways_id
+
+
+# Load Ancestry PCS
+AncestryCoords_CANDLE<- readRDS("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/RawData/Ancestry_Coords_CANDLE_pathways_id_appended.rds")
+
+
+#For some reason 3 of the ancestry IDs are duplicatated, so I am just manually removing these.
+Flag<-which(AncestryCoords_CANDLE$pathways_id=="c0005457")[1]
+Flag<-c(Flag,which(AncestryCoords_CANDLE$pathways_id=="c0005510")[1])
+Flag<-c(Flag,which(AncestryCoords_CANDLE$pathways_id=="c0006018")[1])
+
+AncestryCoords_CANDLE<-AncestryCoords_CANDLE[-Flag,]
+rownames(AncestryCoords_CANDLE)<-AncestryCoords_CANDLE$pathways_id
+
+
+# New CRH Variable
+ImputedCRH<- readRDS("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/RawData/imputed_logCRH_to_Alison.Rds")
+```
+ 
+
+# Curation of combined SES variable
+This was suggested by Nicki Bush at 12/8 meeting as a better method to deal with missingness in the SES data and a more appropriate way to measure SES (Since income and education together contibute to SES, and a high education doesnt mean a high income and vice versa).  We need to do this before the missing data elimination stage because this directly relates to the amount of missing data
+```{r}
+MatEduScaled<-scale(Covar_OG$h_m_enroll_educ,center=F)
+plot(Covar_OG$h_m_enroll_educ,MatEduScaled)
+
+MatIncomeScaled<-scale(Covar_OG$h_enroll_income,center=F)
+plot(Covar_OG$h_enroll_income,MatIncomeScaled)
+
+# REPLACE ONE MISSING VARIABLE WITH THE OTHER
+Missing<-which(is.na(Covar_OG$h_enroll_income))
+MatIncomeScaled[Missing]<-MatEduScaled[Missing]
+
+Missing<-which(is.na(Covar_OG$h_m_enroll_educ))
+MatEduScaled[Missing]<-MatIncomeScaled[Missing]
+
+
+ScaledSES<-rep(NA,dim(Covar_OG)[1])
+  for(i in 1:length(ScaledSES)){
+    ScaledSES[i]<-sum(MatEduScaled[i],MatIncomeScaled[i])
+  }
+ScaledSES<-ScaledSES/2
+ x<-cbind(MatEduScaled,Covar_OG$h_m_enroll_educ,Covar_OG$h_enroll_income,MatIncomeScaled,ScaledSES)
+ 
+ 
+Colors<-car::recode(Covar_OG$h_m_enroll_educ,"1='coral';2='firebrick1';3='darkorchid';4='dodgerblue3'") 
+ 
+plot(ScaledSES,Covar_OG$h_enroll_income,pch=20,col=Colors,cex=Covar_OG$h_m_enroll_educ) # looks good
+
+Covar_OG$ScaledSES<-ScaledSES
+```
+
+
+#Merge Imputed CRH with exsisting CRH Transcriptome data
+
+```{r}
+ImputedCRH<-ImputedCRH[,-c(2)]
+colnames(ImputedCRH)[2]<-"Imputed_LogCRHDelivery"
+
+Covar_OG<-merge(Covar_OG,ImputedCRH,by='row.names',all=T)
+rownames(Covar_OG)<-Covar_OG$Row.names
+Covar_OG<-Covar_OG[,-1]
+```
+
+
+# Initial CANDLE data removal
+
+-Samples without RNA sequencing Data
+-Placental Abruption
+-missing covariate data for the following categories:
+
+PPROM
+Preeclampsia
+Maternal Age
+BMI
+Education
+Maternal Race
+Labor Status
+Delivery Method
+Fetal Sex
+Gestational Diabetes
+Maternal Smoking
+gestational age at delivery
+SES variable 
+```{r}
+Covar<-Covar_OG[colnames(candle_counts$counts),]
+rownames(Covar)
+rownames(AncestryCoords_CANDLE)
+dim(Covar)
+
+Covar<-merge(Covar,AncestryCoords_CANDLE,by='row.names',all=F)
+dim(Covar)
+# Losing a TON of participants here
+
+table(Covar$h_placental_abrupt)
+
+Covar<-subset(Covar,h_placental_abrupt==0)
+
+
+# Missing Data
+
+#Get Rid of any missing NAs in key variables
+
+
+#Maternal Age
+MissingMA<-which(is.na(Covar$h_m_delivery_age))
+print(paste("Missing Maternal Age",length(MissingMA)))
+
+#Gestational Age
+MissingGA<-which(is.na(Covar$h_birth_gestage))
+print(paste("Missing Maternal Age",length(MissingGA)))
+
+#Fetal Sex
+MissingFS<-which(is.na(Covar$h_c_sex))
+print(paste("Missing Fetal Sex",length(MissingFS)))
+
+#Combined SES
+MissingSES<-which(is.na(Covar$ScaledSES))
+print(paste("Missing Education",length(MissingSES)))
+
+MissingMatRace<-which(is.na(Covar$h_m_race))
+print(paste("Missing Race",length(MissingMatRace)))
+
+MissingLS<-which(is.na(Covar$cg_labor_type))
+print(paste("Missing Labor Status",length(MissingLS)))
+
+MissingDM<-which(is.na(Covar$h_del_method))
+print(paste("Missing Delivery Method",length(MissingDM)))
+
+MissingMatBMI<-which(is.na(Covar$h_m_prepreg_bmi))
+print(paste("Missing Maternal BMI",length(MissingMatBMI)))
+
+MissingMatCot<-which(is.na(Covar$m1_cotinine))
+print(paste("MissingMatCot",length(MissingMatCot)))
+
+MissingPE<-which(is.na(Covar$m3_preeclam_currpreg))
+print(paste("MissingPE",length(MissingPE)))
+
+MissingPPROM<-which(is.na(Covar$cg_pprom_currpreg))
+print(paste("MissingPPROM",length(MissingPPROM)))
+
+# In earlier iterations we realized GD1 doesnt have enough people to worry about
+#MissingGD1<-which(is.na(Covar$m1_gestational_diab))
+#print(paste("MissingGD",length(MissingGD1)))
+
+MissingGD3<-which(is.na(Covar$m3_gestational_diab))
+print(paste("MissingGD",length(MissingGD3)))
+
+#Remove Missing Variables (Need to do 1 at a time so that we have the right numbers, and only remove variables with missing data)
+Covar<-Covar[-MissingMA,]
+
+MissingLS<-which(is.na(Covar$cg_labor_type))
+Covar<-Covar[-MissingLS,]
+
+MissingMatBMI<-which(is.na(Covar$h_m_prepreg_bmi))
+Covar<-Covar[-MissingMatBMI,]
+
+MissingMatCot<-which(is.na(Covar$m1_cotinine))
+Covar<-Covar[-MissingMatCot,]
+
+MissingPE<-which(is.na(Covar$m3_preeclam_currpreg))
+Covar<-Covar[-MissingPE,]
+
+
+```
+
+# Add RNA sequencing batches to covariate matrix
+```{r}
+rownames(Covar)<-Covar$Row.names
+Covar<-merge(Covar,batches,by='row.names',all=F)
+rownames(Covar)<-Covar$Row.names
+Covar<-Covar[,-c(1:3)]
+```
+
+
+# Clean up Covariate Data using data dictionary so it is easier to interpret
+```{r}
+
+
+#################
+#   Fetal Sex   #
+#################
+Covar$FetalSex<-as.factor(Covar$h_c_sex)
+levels(Covar$FetalSex)
+
+###########################
+#   Maternal Education   #
+###########################
+Covar$MatEducation<-as.factor(Covar$h_m_enroll_educ)
+table(Covar$MatEducation)
+Covar$MatEducation<-car::recode(Covar$MatEducation,"1='LessThanHS';2='HSGED';3='College';4='GradSchool'") 
+table(Covar$MatEducation)
+
+###########################
+#  Maternal Race   #
+###########################
+Covar$MatRace<-as.factor(Covar$h_m_race)
+Covar$MatRace<-car::recode(Covar$MatRace,"1='White';2='Black';3='Asian';5='Native';6='MultipleRace';7='Other'")
+Covar$MatRace<-fct_relevel(Covar$MatRace, c("Black","White","MultipleRace","Asian","Other")) #Ref level is black vs all otehr
+table(Covar$MatRace)
+
+
+
+###################
+#  Labor Status   #
+###################
+#Meeting on 11/21/2019, Jim and Sheela recommended collapsing 1,2 & 3 into 1 category and comparing to 4: i.e labor vs. no labor
+Covar$LaborStatus<-as.factor(Covar$cg_labor_type)
+Covar$LaborStatus<-car::recode(Covar$LaborStatus,"4='NoLabor';else='Labor'")
+table(Covar$LaborStatus)
+
+###################
+#  Delivery Method  #
+###################
+Covar$DelMethod<-as.factor(Covar$h_del_method)
+Covar$DelMethod<-car::recode(Covar$DelMethod,"1='Vaginal';else='CSection'")
+table(Covar$DelMethod)
+
+###########################
+#  RNA Sequencing Batch   #
+###########################
+
+# This is from phthalates paper-per jims email 1/14/ we should be using analysis Batch
+batches<-batches[rownames(Covar),]
+Covar$SeqBatch<-as.factor(batches$Analysis)
+levels(Covar$SeqBatch)
+
+###########################
+# Preeclampsia   #
+###########################
+Covar$Preeclampsia<-Covar$m3_preeclam_currpreg
+Covar$Preeclampsia<-car::recode(Covar$Preeclampsia,"1='Yes';0='No'")
+Covar$Preeclampsia<-as.factor(Covar$Preeclampsia)
+table(Covar$Preeclampsia)
+###########################
+# PPROM  #
+###########################
+Covar$PPROM<-Covar$cg_pprom_currpreg
+Covar$PPROM<-car::recode(Covar$PPROM,"1='Yes';0='No'")
+Covar$PPROM<-as.factor(Covar$PPROM)
+table(Covar$PPROM)
+
+###########################
+# gestational Diabetes #
+###########################
+Covar$GDM<-Covar$m3_gestational_diab
+Covar$GDM<-car::recode(Covar$GDM,"1='Yes';0='No'")
+Covar$GDM<-as.factor(Covar$GDM)
+table(Covar$GDM)
+```
+
+
+
+# Clean up Covariate Data in Covar_OG as well so we can make supplemental table comparing all
+```{r}
+
+
+#################
+#   Fetal Sex   #
+#################
+Covar_OG$h_c_sex[Covar_OG$h_c_sex == ""] <- NA
+Covar_OG$FetalSex<-as.factor(Covar_OG$h_c_sex)
+levels(Covar_OG$FetalSex)
+
+###########################
+#   Maternal Education   #
+###########################
+Covar_OG$MatEducation<-as.factor(Covar_OG$h_m_enroll_educ)
+table(Covar_OG$MatEducation)
+Covar_OG$MatEducation<-car::recode(Covar_OG$MatEducation,"1='LessThanHS';2='HSGED';3='College';4='GradSchool'") 
+table(Covar_OG$MatEducation)
+
+###########################
+#  Maternal Race   #
+###########################
+Covar_OG$MatRace<-as.factor(Covar_OG$h_m_race)
+Covar_OG$MatRace<-car::recode(Covar_OG$MatRace,"1='White';2='Black';3='Asian';5='Other';4='Other';6='MultipleRace';7='Other'")
+Covar_OG$MatRace<-fct_relevel(Covar_OG$MatRace, c("Black","White","MultipleRace","Asian","Other")) #Ref level is black vs all otehr
+table(Covar_OG$MatRace)
+
+
+
+###################
+#  Labor Status   #
+###################
+#Meeting on 11/21/2019, Jim and Sheela recommended collapsing 1,2 & 3 into 1 category and comparing to 4: i.e labor vs. no labor
+Covar_OG$LaborStatus<-as.factor(Covar_OG$cg_labor_type)
+Covar_OG$LaborStatus<-car::recode(Covar_OG$LaborStatus,"4='NoLabor';else='Labor'")
+table(Covar_OG$LaborStatus)
+
+###################
+#  Delivery Method  #
+###################
+Covar_OG$DelMethod<-as.factor(Covar_OG$h_del_method)
+Covar_OG$DelMethod<-car::recode(Covar_OG$DelMethod,"1='Vaginal';else='CSection'")
+table(Covar_OG$DelMethod)
+
+###########################
+#  RNA Sequencing Batch   #
+###########################
+
+# This is from phthalates paper-per jims email 1/14/ we should be using analysis Batch
+batches<-batches[rownames(Covar_OG),]
+Covar_OG$SeqBatch<-as.factor(batches$Analysis)
+levels(Covar_OG$SeqBatch)
+
+###########################
+# Preeclampsia   #
+###########################
+Covar_OG$Preeclampsia<-Covar_OG$m3_preeclam_currpreg
+Covar_OG$Preeclampsia<-car::recode(Covar_OG$Preeclampsia,"1='Yes';0='No'")
+Covar_OG$Preeclampsia<-as.factor(Covar_OG$Preeclampsia)
+table(Covar_OG$Preeclampsia)
+###########################
+# PPROM  #
+###########################
+Covar_OG$PPROM<-Covar_OG$cg_pprom_currpreg
+Covar_OG$PPROM<-car::recode(Covar_OG$PPROM,"1='Yes';0='No'")
+Covar_OG$PPROM<-as.factor(Covar_OG$PPROM)
+table(Covar_OG$PPROM)
+
+###########################
+# gestational Diabetes #
+###########################
+Covar_OG$GDM<-Covar_OG$m3_gestational_diab
+Covar_OG$GDM<-car::recode(Covar_OG$GDM,"1='Yes';0='No'")
+Covar_OG$GDM<-as.factor(Covar_OG$GDM)
+table(Covar_OG$GDM)
+```
+
+# check gestational age data
+```{r}
+# Reported in Days
+par(mfrow=c(1,3))
+hist(Covar$m1_crh_gestage,breaks=100)
+hist(Covar$m2_crh_gestage,breaks=100)
+hist(Covar$h_birth_gestage,breaks=100)
+
+#Divide by 7 to make weeks
+Covar$m1_crh_gestage<-Covar$m1_crh_gestage/7
+Covar$m2_crh_gestage<-Covar$m2_crh_gestage/7
+Covar$h_birth_gestage<-Covar$h_birth_gestage/7
+
+# Make sure there are no weird breaks!
+par(mfrow=c(1,3))
+hist(Covar$m1_crh_gestage,breaks=100)
+hist(Covar$m2_crh_gestage,breaks=100)
+hist(Covar$h_birth_gestage,breaks=100)
+```
+
+# Create delta CRH and delta GA M1 M2 Visti variables
+```{r}
+Covar$Delta_LogCRH<-log(Covar$m2_crh)-log(Covar$m1_crh) #calculated the same way as Emily Barrett Paper
+Covar$Delta_Visit<-Covar$m2_crh_gestage-Covar$m1_crh_gestage #this is the difference in the times between visits
+```
+ 
+ 
+#C1 Measurements
+-How many participants have CRH measurements at C1 and C2
+-what is the overlap
+```{r}
+
+table(is.na(Covar$m1_crh))
+table(is.na(Covar$m2_crh))
+table(is.na(Covar$Imputed_LogCRHDelivery))
+
+Covar_CRH1<-Covar[!is.na(Covar$m1_crh),]
+# Makre sure they also all have gestational age at sample collection
+table(is.na(Covar_CRH1$m1_crh_gestage))
+
+Covar_CRH2<-Covar[!is.na(Covar$m2_crh),]
+table(is.na(Covar_CRH2$m2_crh_gestage))
+table(is.na(Covar_CRH2$Imputed_LogCRHDelivery)) #these are all the same so we can use this for both
+
+length(intersect(rownames(Covar_CRH2),rownames(Covar_CRH1)))
+
+
+
+PlotVisits<-Covar_CRH1[,c(25,27)]
+colnames(PlotVisits)<-c("M1_Visit","M2_Visit")
+PlotVisits$Time1<-1
+PlotVisits$Time2<-2
+
+par(mfrow=c(1,1))
+plot(PlotVisits$M1_Visit,PlotVisits$Time1,xlim=c(15,40),ylim=c(0.5,2.5),pch=20,cex=2,col="darkorchid1",xlab="Gestational Age at Measurement",ylab="Visit")
+points(PlotVisits$M2_Visit,PlotVisits$Time2,pch=20,col="springgreen1",cex=2)
+
+PlotVisits2<-na.omit(PlotVisits)
+Flag1<-subset(PlotVisits2,M1_Visit<28)
+Flag1<-subset(Flag1,M2_Visit<28)
+
+Flag2<-subset(PlotVisits2,M1_Visit>27.99)
+Flag<-rbind(Flag1,Flag2)
+
+for(i in 1:length(PlotVisits2$M1_Visit)){
+                  segments(PlotVisits2$M1_Visit[i], 1, x1 = PlotVisits2$M2_Visit[i], y1 = 2,col = "black", lty = 1, lwd = 0.75)
+}
+
+for(i in 1:length(Flag$M1_Visit)){
+                  segments(Flag$M1_Visit[i], 1, x1 =Flag$M2_Visit[i], y1 = 2,col = "red", lty = 1, lwd = 1.5)
+  }
+
+
+abline(v=c(13,28),col="grey50",lwd=2,lty=2)
+
+
+par(mfrow=c(1,2))
+plot(Covar$m1_crh_gestage,log(Covar$m1_crh),xlim=c(10,40),ylim=c(0,10),pch=20,col="darkorchid1",xlab="Gestational Age at Measurement",ylab="Log CRH concentration")
+points(Covar$m2_crh_gestage,log(Covar$m2_crh),pch=20,col="springgreen1")
+abline(v=c(13,28),col="grey50",lwd=2,lty=2)
+
+
+
+plot(Covar$m1_crh_gestage,Covar$m1_crh,xlim=c(10,40),ylim=c(0,4000),pch=20,col="darkorchid1",xlab="Gestational Age at Measurement",ylab="CRH concentration")
+points(Covar$m2_crh_gestage,Covar$m2_crh,pch=20,col="springgreen1")
+abline(v=c(13,28),col="grey50",lwd=2,lty=2)
+
+cor.test(Covar$m1_crh_gestage,log(Covar$m1_crh))
+cor.test(Covar$m2_crh_gestage,log(Covar$m2_crh))
+
+fivenum(Covar_CRH1$m1_crh_gestage)
+table(Covar_CRH1$m1_crh_gestage<14)
+table(Covar_CRH1$m1_crh_gestage<28)
+table(Covar_CRH1$m1_crh_gestage>27.99)
+
+fivenum(Covar_CRH2$m2_crh_gestage)
+table(Covar_CRH2$m2_crh_gestage<14)
+table(Covar_CRH2$m2_crh_gestage<28)
+table(Covar_CRH2$m2_crh_gestage>27.99)
+
+fivenum(Covar_CRH1$Delta_Visit)
+
+# How many participants had both M1 and M2 visits in the 2nd trimester?
+Check<-subset(Covar_CRH1,m1_crh_gestage<28)
+table(Check$m2_crh_gestage<28)
+
+# How many participants had both M1 and M2 visits in the 3rd trimester?
+Check<-subset(Covar_CRH1,m1_crh_gestage>27.99)
+table(Check$m2_crh_gestage<28)
+
+
+par(mfrow=c(1,1))
+plot(Covar$m1_crh_gestage,log2(Covar$m1_crh),xlim=c(0,45),ylim=c(0,16),pch=20,col="darkorchid1",xlab="Gestational Age at Measurement",ylab="Log CRH concentration")
+points(Covar$m2_crh_gestage,log2(Covar$m2_crh),pch=20,col="springgreen1")
+points(Covar$h_birth_gestage,Covar$Imputed_LogCRHDelivery,pch=13,col="blue")
+
+
+
+abline(v=c(13,28),col="grey50",lwd=2,lty=2)
+abline(v=c(37),col="grey70",lwd=2,lty=2)
+
+summary(Covar_CRH1$m1_crh)
+summary(Covar_CRH2$m2_crh)
+
+summary(exp(Covar_CRH2$Imputed_LogCRHDelivery))
+
+
+```
+
+
+
+
+# Make Table of Preliminary Key Covariates
+```{r}
+  CatFunction<-function(Visit1Var,Visit2Var){
+  Covar<-cbind(table(Visit1Var),
+                  table(Visit2Var))
+  colnames(Covar)<-c("N_Visit1","N_Visit2")
+  x<-fisher.test(Covar)
+  Covar<-as.data.frame(Covar)
+  Covar$p<-x$p.value
+  Covar
+  }
+
+  
+  
+  Table1A<-rbind(CatFunction(Covar_CRH1$MatEducation,Covar_CRH2$MatEducation),
+                CatFunction(Covar_CRH1$h_c_sex,Covar_CRH2$h_c_sex),
+                CatFunction(Covar_CRH1$LaborStatus,Covar_CRH2$LaborStatus),
+                CatFunction(Covar_CRH1$DelMethod,Covar_CRH2$DelMethod),
+                CatFunction(Covar_CRH1$m3_preeclam_currpreg,Covar_CRH2$m3_preeclam_currpreg),
+                CatFunction(Covar_CRH1$m1_gestational_diab,Covar_CRH2$m1_gestational_diab),
+                CatFunction(Covar_CRH1$m3_gestational_diab,Covar_CRH2$m3_gestational_diab),
+                CatFunction(Covar_CRH1$cg_pprom_currpreg,Covar_CRH2$cg_pprom_currpreg),
+                CatFunction(Covar_CRH1$m1_cotinine_yn,Covar_CRH2$m1_cotinine_yn),
+                CatFunction(Covar_CRH1$m2_cotinine_yn,Covar_CRH2$m2_cotinine_yn),
+                CatFunction(Covar_CRH1$SeqBatch,Covar_CRH2$SeqBatch),
+                CatFunction(Covar_CRH1$preterm,Covar_CRH2$preterm),
+                CatFunction(Covar_CRH1$h_m_race,Covar_CRH2$h_m_race))
+  
+  summary(Covar_CRH1$h_birth_gestage)
+  sd(Covar_CRH1$h_birth_gestage)
+  
+  
+  Table1B<-rbind(CatFunction(Covar_CRH1$MatEducation,Covar_OG$MatEducation),
+                CatFunction(Covar_CRH1$h_c_sex,Covar_OG$h_c_sex),
+                CatFunction(Covar_CRH1$LaborStatus,Covar_OG$LaborStatus),
+                CatFunction(Covar_CRH1$DelMethod,Covar_OG$DelMethod),
+                CatFunction(Covar_CRH1$m3_preeclam_currpreg,Covar_OG$m3_preeclam_currpreg),
+                CatFunction(Covar_CRH1$m1_gestational_diab,Covar_OG$m1_gestational_diab),
+                CatFunction(Covar_CRH1$m3_gestational_diab,Covar_OG$m3_gestational_diab),
+                CatFunction(Covar_CRH1$cg_pprom_currpreg,Covar_OG$cg_pprom_currpreg),
+                CatFunction(Covar_CRH1$m1_cotinine_yn,Covar_OG$m1_cotinine_yn),
+                CatFunction(Covar_CRH1$m2_cotinine_yn,Covar_OG$m2_cotinine_yn),
+                #CatFunction(Covar_CRH1$SeqBatch,Covar_OG$SeqBatch),
+                CatFunction(Covar_CRH1$preterm,Covar_OG$preterm),
+                CatFunction(Covar_CRH1$MatRace,Covar_OG$MatRace))
+                
+    
+
+```
+
+
+
+-using the identical code as in other analyses to be consistent; this was originally a function for the phthalates and pah anlayses
+
+```{r}
+Counts<-candle_counts$counts[,rownames(Covar_CRH1)]
+LSCounts<-candle_lengthScaledTPM$counts[,rownames(Covar_CRH1)]
+LSLength <-candle_lengthScaledTPM$counts[,rownames(Covar_CRH1)]
+
+annot_2<-annot #creating a copy of this annotatoin file for the M2 visit
+#RNASeqProcessing<-function(Counts,LSCounts,LSLength,annot){
+
+print("Original")
+print(dim(annot)[1])
+print(dim(Counts)[1])
+print(dim(LSCounts)[1])
+print(dim(LSLength)[1])
+
+#get rownames of count dataset to match annot$ENSEMBL by removing the "." and 
+# everything after it
+rownames(Counts)<-gsub("\\..*","",rownames(Counts))
+rownames(LSCounts)<-gsub("\\..*","",rownames(LSCounts))
+rownames(LSLength)<-gsub("\\..*","",rownames(LSLength))
+
+
+annot<-subset(annot,BIOTYPE=="protein_coding")
+Counts<-Counts[as.character(annot$ENSEMBL),]
+LSCounts<-LSCounts[as.character(annot$ENSEMBL),]
+LSLength<-LSLength[as.character(annot$ENSEMBL),]
+
+print(dim(Counts)[1])
+print(dim(LSCounts)[1])
+print(dim(LSLength)[1])
+
+
+#Get CPM & Log Transform
+cpm<-cpm(LSCounts,log=T)
+
+#filter based on low expression
+keep<-rowMeans(cpm)>0
+summary(keep)
+
+cpm_filt<-cpm[keep,]
+counts_filt<-LSCounts[keep,]
+length_filt<-LSLength[keep,]
+annot<-annot[keep,]
+
+print("Filtering")
+print(dim(cpm_filt)[1])
+print(dim(counts_filt)[1])
+print(dim(length_filt)[1])
+
+plot(density(cpm),main="Before Filtering")
+abline(v =0, col = "red", lty = 2)
+plot(density(cpm_filt),main="After Filtering")
+abline(v =0, col = "red", lty = 2)
+
+#remove remaining duplicate genes
+summary(duplicated(cpm_filt))
+
+dupgenes<-as.character(annot[annot$ENSEMBL%in%rownames(cpm_filt)[duplicated(cpm_filt)],"SYMBOL"])
+dupgenes
+
+annot<-annot[-which(annot$SYMBOL%in%dupgenes),]
+cpm_filt<-cpm_filt[-which(duplicated(cpm_filt)),]
+counts_filt<-counts_filt[-which(duplicated(counts_filt)),]
+length_filt<-length_filt[-which(duplicated(length_filt)),]
+
+table(annot$BIOTYPE)
+
+print("Remove Duplicates")
+print(dim(annot)[1])
+print(dim(cpm_filt)[1])
+print(dim(counts_filt)[1])
+print(dim(length_filt)[1])
+
+Y<- DGEList(counts=counts_filt,genes = annot$SYMBOL)
+
+boxplot(Y$counts[,1:10])
+boxplot(cpm[,1:10])
+boxplot(cpm(Y,log=T)[,1:10])
+Y<-calcNormFactors(Y,method="TMM") #This is the Default Method
+boxplot(cpm(Y,log=T)[,1:10])
+
+###Calculate RPKM
+RPKM <- cpm(Y, log = TRUE) - log2(rowMeans(length_filt)/1000)
+hist(RPKM[,1], 101)
+Y$RPKM<-RPKM
+
+Y->M1_RNASeq
+```
+
+
+```{r}
+## M2 RNA Seq ####
+annot<-annot_2 #pull back the old annotation file
+Counts<-candle_counts$counts[,rownames(Covar_CRH2)]
+LSCounts<-candle_lengthScaledTPM$counts[,rownames(Covar_CRH2)]
+LSLength <-candle_lengthScaledTPM$counts[,rownames(Covar_CRH2)]
+
+#RNASeqProcessing<-function(Counts,LSCounts,LSLength,annot){
+
+print("Original")
+print(dim(annot)[1])
+print(dim(Counts)[1])
+print(dim(LSCounts)[1])
+print(dim(LSLength)[1])
+
+#get rownames of count dataset to match annot$ENSEMBL by removing the "." and 
+# everything after it
+rownames(Counts)<-gsub("\\..*","",rownames(Counts))
+rownames(LSCounts)<-gsub("\\..*","",rownames(LSCounts))
+rownames(LSLength)<-gsub("\\..*","",rownames(LSLength))
+
+# Retain only protein coding genes\
+annot<-subset(annot,BIOTYPE=="protein_coding")
+
+Counts<-Counts[as.character(annot$ENSEMBL),]
+LSCounts<-LSCounts[as.character(annot$ENSEMBL),]
+LSLength<-LSLength[as.character(annot$ENSEMBL),]
+
+print(dim(Counts)[1])
+print(dim(LSCounts)[1])
+print(dim(LSLength)[1])
+
+
+#Get CPM & Log Transform
+cpm<-cpm(LSCounts,log=T)
+
+#filter based on low expression
+keep<-rowMeans(cpm)>0
+summary(keep)
+
+cpm_filt<-cpm[keep,]
+counts_filt<-LSCounts[keep,]
+length_filt<-LSLength[keep,]
+annot<-annot[keep,]
+
+print("Filtering")
+print(dim(cpm_filt)[1])
+print(dim(counts_filt)[1])
+print(dim(length_filt)[1])
+
+plot(density(cpm),main="Before Filtering")
+abline(v =0, col = "red", lty = 2)
+plot(density(cpm_filt),main="After Filtering")
+abline(v =0, col = "red", lty = 2)
+
+#remove remaining duplicate genes
+summary(duplicated(cpm_filt))
+
+dupgenes<-as.character(annot[annot$ENSEMBL%in%rownames(cpm_filt)[duplicated(cpm_filt)],"SYMBOL"])
+dupgenes
+
+annot<-annot[-which(annot$SYMBOL%in%dupgenes),]
+cpm_filt<-cpm_filt[-which(duplicated(cpm_filt)),]
+counts_filt<-counts_filt[-which(duplicated(counts_filt)),]
+length_filt<-length_filt[-which(duplicated(length_filt)),]
+
+table(annot$BIOTYPE)
+
+print("Remove Duplicates")
+print(dim(annot)[1])
+print(dim(cpm_filt)[1])
+print(dim(counts_filt)[1])
+print(dim(length_filt)[1])
+
+Y<- DGEList(counts=counts_filt,genes = annot$SYMBOL)
+
+boxplot(Y$counts[,1:10])
+boxplot(cpm[,1:10])
+boxplot(cpm(Y,log=T)[,1:10])
+Y<-calcNormFactors(Y,method="TMM") #This is the Default Method
+boxplot(cpm(Y,log=T)[,1:10])
+
+###Calculate RPKM
+RPKM <- cpm(Y, log = TRUE) - log2(rowMeans(length_filt)/1000)
+hist(RPKM[,1], 101)
+Y$RPKM<-RPKM
+
+Y->M2_RNASeq
+```
+
+#save processed data
+
+```{r}
+save(M1_RNASeq,Covar_CRH1,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M1_CompleteData.RData")
+
+save(M2_RNASeq,Covar_CRH2,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M2_CompleteData.RData")
+```
+
+
+

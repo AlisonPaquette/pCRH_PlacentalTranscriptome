@@ -1,0 +1,301 @@
+---
+title: "MediationAnalysis"
+author: "Alison Paquette"
+date: "4/24/2023"
+output: html_document
+---
+#Load Packages
+```{r}
+library(edgeR)
+library(mediation)
+```
+
+#Load Data
+```{r}
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M1_CompleteData.RData")
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M2_CompleteData.RData")
+```
+
+## Load Significant results
+```{r}
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M1_CRH_Sig.RData")
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M2_CRH_Sig.RData")
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/Delivery_CRH_Sig.RData")
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/GestLength_Sig.RData")
+```
+#Extract RNA sequencing Matrix
+```{r}
+Exprs1<-cpm(M1_RNASeq,log=T)
+rownames(Exprs1)<-M1_RNASeq$genes$genes
+Exprs1<-t(Exprs1) # So that the columns are the genes, rows are individuals , and we will just subset to what we need
+
+Exprs2<<-cpm(M2_RNASeq,log=T)
+rownames(Exprs2)<-M2_RNASeq$genes$genes
+Exprs2<-t(Exprs2)
+```
+
+
+# Create list of DEGs For Mediation Analysis
+*  We awill do this one analysis at a time
+```{r}
+CRH1_GA<-intersect(Results_M1_Sig$genes,Results_GestationalLength_Sig$genes)
+CRH2_GA<-intersect(Results_M2_Sig$genes,Results_GestationalLength_Sig$genes)
+CRHDelivery_GA<-intersect(Results_Delivery_Sig$genes,Results_GestationalLength_Sig$genes)
+```
+We will have 1 gene to examine at CRH1 , 7 at CRH2, and 34 at delivery. 
+
+# Mediation Analysis using R package Mediate
+ref: https://cran.r-project.org/web/packages/mediation/vignettes/mediation.pdf
+Dependent Variable-> Gestational Length (outcome )
+Mediator Variable-> Gene Expression of Gene X
+Independent Variable-> pCRH at given timepoitng
+
+# CRH: M1 Visit
+```{r}
+CRH1_Med<-data.frame(matrix(NA,nrow=length(CRH1_GA),ncol=9))
+colnames(CRH1_Med)<-c("Gene","ACME_Est","ACME_P","ADE_Est","ADE_P","TE_Est","TE_P","PM_Est","PM_P")
+
+for(i in 1:length(CRH1_GA)){
+  
+MediationData<-cbind(Covar_CRH1,Exprs1[,CRH1_GA[i]])
+MediationData$m1_crh<-log2(MediationData$m1_crh) #Log Transform CRH Data
+
+colnames(MediationData)[57]<-"GeneExprs"
+plot(hist(MediationData$GeneExprs)) #Histogram to see if data is normally distributed
+CRH1_Med$Gene[i]<-CRH1_GA[i]
+
+#First run model of Exposure->Mediator
+med.fit<-lm(GeneExprs~m1_crh
+                  +m1_crh_gestage
+                   #Maternal Variables
+                   +h_m_delivery_age
+                   +h_m_prepreg_bmi
+                   +ScaledSES
+                   +PC1 #maternal ancestry
+                   +PC2
+                   +PC3
+                   +m1_cotinine
+                   
+                   #Precision Variables
+                   +SeqBatch
+                   +LaborStatus
+                   +DelMethod
+                   +FetalSex
+                  
+                   #Maternal Variables
+                   +Preeclampsia
+                   +GDM
+                   +PPROM,dat=MediationData)
+summary(med.fit) #should be significant (to fulfill the mediation analysis and also to be in alignment with our LIMMA results)
+
+out.fit<-lm(h_birth_gestage~m1_crh+GeneExprs
+          +m1_crh_gestage
+          #Maternal Variables
+          +h_m_delivery_age
+          +h_m_prepreg_bmi
+          +ScaledSES
+          +PC1 #maternal ancestry
+          +PC2
+          +PC3
+          +m1_cotinine
+                   
+      #Precision Variables
+          +SeqBatch
+           +LaborStatus
+           +DelMethod
+           +FetalSex
+                  
+       #Maternal Variables
+         +Preeclampsia
+         +GDM
+         +PPROM,dat=MediationData)
+
+med.out<-mediate(med.fit,out.fit,treat="m1_crh",mediator="GeneExprs",sims=1000)
+
+#ACME
+CRH1_Med$ACME_Est[i]<-med.out$d1
+CRH1_Med$ACME_P[i]<-med.out$d1.p
+#ADE
+CRH1_Med$ADE_Est[i]<-med.out$z1
+CRH1_Med$ADE_P[i]<-med.out$z1.p
+#TE
+CRH1_Med$TE_Est[i]<-med.out$tau.coef
+CRH1_Med$TE_P[i]<-med.out$tau.p
+#Prop Med
+  CRH1_Med$PM_Est[i]<-med.out$n1
+CRH1_Med$PM_P[i]<-med.out$n1.p
+}
+```
+
+# CRH: M2 Visit
+```{r}
+
+CRH2_Med<-data.frame(matrix(NA,nrow=length(CRH2_GA),ncol=9))
+colnames(CRH2_Med)<-c("Gene","ACME_Est","ACME_P","ADE_Est","ADE_P","TE_Est","TE_P","PM_Est","PM_P")
+rownames(CRH2_Med)<-CRH2_GA
+
+for(i in 1:length(CRH2_GA)){
+  
+MediationData<-cbind(Covar_CRH2,Exprs2[,CRH2_GA[i]])
+MediationData$m2_crh<-log2(MediationData$m2_crh) #Log Transform CRH Data
+colnames(MediationData)[57]<-"GeneExprs"
+plot(hist(MediationData$GeneExprs)) #Histogram to see if data is normally distributed
+
+CRH2_Med$Gene[i]<-CRH2_GA[i]
+
+#First run model of Exposure->Mediator
+med.fit<-lm(GeneExprs~m2_crh
+                  +m2_crh_gestage
+                   #Maternal Variables
+                   +h_m_delivery_age
+                   +h_m_prepreg_bmi
+                   +ScaledSES
+                   +PC1 #maternal ancestry
+                   +PC2
+                   +PC3
+                   +m1_cotinine
+                   
+                   #Precision Variables
+                   +SeqBatch
+                   +LaborStatus
+                   +DelMethod
+                   +FetalSex
+                  
+                   #Maternal Variables
+                   +Preeclampsia
+                   +GDM
+                   +PPROM,dat=MediationData)
+summary(med.fit) #should be significant (to fulfill the mediation analysis and also to be in alignment with our LIMMA results)
+
+out.fit<-lm(h_birth_gestage~m2_crh+GeneExprs
+          +m2_crh_gestage
+          #Maternal Variables
+          +h_m_delivery_age
+          +h_m_prepreg_bmi
+          +ScaledSES
+          +PC1 #maternal ancestry
+          +PC2
+          +PC3
+          +m1_cotinine
+                   
+      #Precision Variables
+          +SeqBatch
+           +LaborStatus
+           +DelMethod
+           +FetalSex
+                  
+       #Maternal Variables
+         +Preeclampsia
+         +GDM
+         +PPROM,dat=MediationData)
+
+med.out<-mediate(med.fit,out.fit,treat="m2_crh",mediator="GeneExprs",sims=1000)
+
+#ACME
+CRH2_Med$ACME_Est[i]<-med.out$d1
+CRH2_Med$ACME_P[i]<-med.out$d1.p
+#ADE
+CRH2_Med$ADE_Est[i]<-med.out$z1
+CRH2_Med$ADE_P[i]<-med.out$z1.p
+#TE
+CRH2_Med$TE_Est[i]<-med.out$tau.coef
+CRH2_Med$TE_P[i]<-med.out$tau.p
+#Prop Med
+  CRH2_Med$PM_Est[i]<-med.out$n1
+CRH2_Med$PM_P[i]<-med.out$n1.p
+}
+```
+
+
+# CRH: Delivery Visit
+```{r}
+
+
+CRHDel_Med<-data.frame(matrix(NA,nrow=length(CRHDelivery_GA),ncol=9))
+colnames(CRHDel_Med)<-c("Gene","ACME_Est","ACME_P","ADE_Est","ADE_P","TE_Est","TE_P","PM_Est","PM_P")
+rownames(CRHDel_Med)<-CRHDelivery_GA
+
+for(i in 1:length(CRHDelivery_GA)){
+  
+MediationData<-cbind(Covar_CRH2,Exprs2[,CRHDelivery_GA[i]])
+colnames(MediationData)[57]<-"GeneExprs"
+plot(hist(MediationData$GeneExprs)) #Histogram to see if data is normally distributed
+
+CRHDel_Med$Gene[i]<-CRHDelivery_GA[i]
+
+#First run model of Exposure->Mediator
+med.fit<-lm(GeneExprs~Imputed_LogCRHDelivery
+                   #Maternal Variables
+                   +h_m_delivery_age
+                   +h_m_prepreg_bmi
+                   +ScaledSES
+                   +PC1 #maternal ancestry
+                   +PC2
+                   +PC3
+                   +m1_cotinine
+                   
+                   #Precision Variables
+                   +SeqBatch
+                   +LaborStatus
+                   +DelMethod
+                   +FetalSex
+                  
+                   #Maternal Variables
+                   +Preeclampsia
+                   +GDM
+                   +PPROM,dat=MediationData)
+summary(med.fit) #should be significant (to fulfill the mediation analysis and also to be in alignment with our LIMMA results)
+
+out.fit<-lm(h_birth_gestage~Imputed_LogCRHDelivery+GeneExprs
+          #Maternal Variables
+          +h_m_delivery_age
+          +h_m_prepreg_bmi
+          +ScaledSES
+          +PC1 #maternal ancestry
+          +PC2
+          +PC3
+          +m1_cotinine
+                   
+      #Precision Variables
+          +SeqBatch
+           +LaborStatus
+           +DelMethod
+           +FetalSex
+                  
+       #Maternal Variables
+         +Preeclampsia
+         +GDM
+         +PPROM,dat=MediationData)
+
+med.out<-mediate(med.fit,out.fit,treat="Imputed_LogCRHDelivery",mediator="GeneExprs",sims=1000)
+
+#ACME
+CRHDel_Med$ACME_Est[i]<-med.out$d1
+CRHDel_Med$ACME_P[i]<-med.out$d1.p
+#ADE
+CRHDel_Med$ADE_Est[i]<-med.out$z1
+CRHDel_Med$ADE_P[i]<-med.out$z1.p
+#TE
+CRHDel_Med$TE_Est[i]<-med.out$tau.coef
+CRHDel_Med$TE_P[i]<-med.out$tau.p
+#Prop Med
+CRHDel_Med$PM_Est[i]<-med.out$n1
+CRHDel_Med$PM_P[i]<-med.out$n1.p
+}
+```
+
+
+# Compile Results into table and translate
+
+
+```{r}
+CRH1_Med$Timepoint<-"M1"
+CRH2_Med$Timepoint<-"M2"
+CRHDel_Med$Timepoint<-"Delivery(Imputed)"
+
+FullMediationResults<-rbind(CRH1_Med,CRH2_Med,CRHDel_Med)
+
+
+write.csv(FullMediationResults,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/MediationResults.csv")
+```
+

@@ -1,0 +1,143 @@
+---
+title: "PretermBirthAnalysis"
+author: "Alison Paquette"
+date: "9/30/2020"
+output: html_document
+---
+
+# Load Relevant Data
+-load the TRN as it will be presented in the R shiny app so that we can ensure
+-This has been published as a pre-print
+```{r}
+TRNModel<-read.csv("~/Dropbox/PlacentalTRNProject/FinalAnalysisOctober2020/FinalResultsfromKhaleesi/TRNForRShinyApp.csv")
+TRNModel<-TRNModel[,-1]
+TRNModel$targetGene<-as.character(TRNModel$targetGene)
+TRNModel$TF<-as.character(TRNModel$TF)
+
+#Load results of miroarray analysis published in BOR Paper
+
+SigGenes<-read.csv("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/SupplementalTable2_ForTRN.csv")
+
+rownames(SigGenes)<-as.character(SigGenes$Gene)
+
+load("/Users/apaque/Dropbox/PlacentalTRNProject/FinalAnalysisOctober2020/FinalResultsfromKhaleesi/Node&Edge.RData")
+```
+
+
+# Enrichment Test Function####
+
+Perform Fishers exact test to see if Gene list is enriched for specifif TFs.
+Reference: https://www.pathwaycommons.org/guide/primers/statistics/fishers_exact_test/
+```{r}
+EnrichFisher<-function(NSigGenes,NTotalGenes,SigInGroup,GroupSize){
+
+  a=SigInGroup ## Equivalent to X; Table 3. In the TFgroup and DE
+  b= GroupSize-SigInGroup #. Equivalent to m-X: In the TFGroup but NOT DE
+  c=NSigGenes-SigInGroup  # Equivalent to K-X; DE but not in the group
+  n=NTotalGenes-GroupSize #n in contigencyTable: not in group
+  d=n-c
+  mat<-(matrix(c(a,c,b,d),nrow=2))
+  mat
+  sum(mat)==NTotalGenes
+  fisher.test(mat,alternative="greater")$p.value #default is 2 sided. We need this to be greater rather than less to say that these genes are enriched
+}
+```
+
+# Generate TF Enrichment Table
+-This is basically what the RShiny function is doing
+```{r}
+
+
+
+TFTable<-as.data.frame(table(TRNModel$TF))
+colnames(TFTable)<-c("TF","NTargets")
+rownames(TFTable)<-TFTable$TF
+TFTable$TF<-as.character(TFTable$TF)
+TFTable$SigGenes<-NA
+
+  for(i in 1:dim(TFTable)[1])
+  {
+    x<-subset(TRNModel,TF==as.character(TFTable$TF[i])) # Pull out the TF of interest
+    dim(x)[1]==TFTable$NTargets[i] #This should be equal
+    TFTable$SigGenes[i]<-length(intersect(as.character(x$targetGene),SigGenes$Gene)) #How many in the input gene list match this TF?
+  }
+
+
+
+  TFTable$FisherTest<-NA
+  # Perform Enrichment Test using Fishers Exact Function
+  for(i in 1:length(TFTable$TF)){
+    TFTable$FisherTest[i]<-EnrichFisher(NSigGenes=as.numeric(length(SigGenes$Gene)),NTotalGenes=7712,SigInGroup =TFTable$SigGenes[i],GroupSize=TFTable$NTargets[i])
+  }
+
+AllTFTable<-TFTable
+# Filter By Preset Thresholds
+
+MinSigGenes=3
+#ModuleMax
+
+#TFTable<-subset(TFTable,NTargets>=ModuleMin)
+#TFTable<-subset(TFTable,NTargets<ModuleMax)
+TFTable<-subset(TFTable,SigGenes>=MinSigGenes)
+TFTable$FisherAdjustP<-p.adjust(TFTable$FisherTest,method="BH",n=dim(TFTable)[1])
+
+EnrichedTFTable<-subset(TFTable,FisherAdjustP<0.05)
+
+write.csv(EnrichedTFTable,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/TRNAnalysis11222023.csv")
+```
+
+#Pull out Enriched TFs and get calculations for paper
+```{r}
+EnrichedTFs<-subset(TFTable,FisherAdjustP<0.05)$TF
+
+#1. How many total Genes in List?
+GenesIncluded<-NULL
+for(i in 1:length(EnrichedTFs)){
+  TargetGenes<-as.character(subset(TRNModel,TF==EnrichedTFs[i])$targetGene)
+  TargetGenes<-intersect(TargetGenes,SigGenes$Gene)
+  GenesIncluded<-union(TargetGenes,GenesIncluded)
+}
+
+
+length(GenesIncluded)/length(SigGenes$Gene)
+
+Table4<-TFTable[EnrichedTFs,]
+
+Table4$Genes<-NA
+
+for(i in 1:length(EnrichedTFs)){
+    TargetGenes<-as.character(subset(TRNModel,TF==EnrichedTFs[i])$targetGene)
+    TargetGenes<-intersect(TargetGenes,SigGenes$Gene)
+    Table4$Genes[i]<-paste(TargetGenes,collapse=" ")
+}
+
+```
+
+# Which CRH genes were ALSO TFs?
+```{r}
+rownames(AllTFTable)<-AllTFTable$TF
+PTBTFs<-TFTable[intersect(SigGenes$Gene,TFTable$TF),]
+
+PTBTFs<-merge(PTBTFs,SigGenes,by='row.names',all.x=T,all.y=F)
+
+PTBTFs$DEGenes<-NA
+for(i in 1:length(PTBTFs$TF)){
+    TargetGenes<-as.character(subset(TRNModel,TF==PTBTFs$TF[i])$targetGene)
+    TargetGenes<-intersect(TargetGenes,SigGenes$Gene)
+    PTBTFs$DEGenes[i]<-paste(TargetGenes,collapse=",")
+}
+write.table(PTBTFs,file="~/Dropbox/PlacentalTRNProject/Manuscript and Docs/TRNManuscript/July2022Submission_TRN/BioRXiv Submission/ScienceAdvancesResponsetoReviewers/ResponsetoReviewrs3_September2023/NewAnalyses/PretermBirthTFs10112023.csv")
+
+
+#Total Number of Preterm Birth Genes
+
+DE_PTBGenes<-NA
+for(i in 1:length(PTBTFs$TF)){
+    TargetGenes<-as.character(subset(TRNModel,TF==PTBTFs$TF[i])$targetGene)
+    TargetGenes<-intersect(TargetGenes,SigGenes$Gene)
+    DE_PTBGenes<-union(TargetGenes,DE_PTBGenes)
+}
+
+length(DE_PTBGenes)/length(SigGenes$Gene)
+```
+

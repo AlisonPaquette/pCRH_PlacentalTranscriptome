@@ -1,0 +1,725 @@
+---
+title: "Preliminary Analysis"
+author: "Alison Paquette"
+date: "11/5/2022"
+output: html_document
+---
+
+# Load Packages
+```{r}
+library(edgeR)
+library(sva)
+library(RColorBrewer)
+library(plotrix)
+```
+
+
+# Load Data
+```{r}
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M1_CompleteData.RData")
+load("/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M2_CompleteData.RData")
+```
+
+
+#Check to make sure that the variables are all in the correct format
+```{r}
+is.numeric(log(Covar_CRH1$m1_crh))
+is.numeric(Covar_CRH1$m1_crh_gestage)
+
+is.numeric(Covar_CRH1$h_m_delivery_age)
+is.numeric(Covar_CRH1$h_m_prepreg_bmi)
+is.factor(Covar_CRH1$MatEducation)
+is.numeric(Covar_CRH1$PC1) #maternal ancestry
+is.numeric(Covar_CRH1$PC2)
+is.numeric(Covar_CRH1$PC3)
+is.numeric(Covar_CRH1$m1_cotinine)
+                   
+                   #Precision Variables
+is.factor(Covar_CRH1$SeqBatch)
+is.factor(Covar_CRH1$LaborStatus)
+is.factor(Covar_CRH1$DelMethod)
+is.factor(Covar_CRH1$FetalSex)
+                   
+                   #Maternal Variables
+is.factor(Covar_CRH1$Preeclampsia)
+is.factor(Covar_CRH1$GDM)
+is.factor(Covar_CRH1$PPROM)
+```
+
+
+#### M1 Visit####
+# Create Model Matrix
+```{r}
+  mod_M1=model.matrix(~+log2(Covar_CRH1$m1_crh)
+                   +Covar_CRH1$m1_crh_gestage
+                   #Maternal Variables
+                   +Covar_CRH1$h_m_delivery_age
+                   +Covar_CRH1$h_m_prepreg_bmi
+                   +Covar_CRH1$ScaledSES
+                   +Covar_CRH1$PC1 #maternal ancestry
+                   +Covar_CRH1$PC2
+                   +Covar_CRH1$PC3
+                   +Covar_CRH1$m1_cotinine
+                   
+                   #Precision Variables
+                   +Covar_CRH1$SeqBatch
+                   +Covar_CRH1$LaborStatus
+                   +Covar_CRH1$DelMethod
+                   +Covar_CRH1$FetalSex
+                  
+                   #Maternal Variables
+                   +Covar_CRH1$Preeclampsia
+                   +Covar_CRH1$GDM
+                   +Covar_CRH1$PPROM)
+
+```
+
+#Limma Voom
+```{r}
+  par(mfrow=c(1,1))
+  v<-voom(M1_RNASeq, mod_M1,plot=TRUE) 
+  designMatrix<-v$design
+fit <- eBayes(lmFit(v, designMatrix))
+fit<-topTable(fit, coef=2,number=dim(fit)[1],adjust.method="BH") #Coefficent 2 is the PAH
+par(mfrow=c(1,2))
+hist(fit$P.Value,breaks=20,main="CRH_M1 Visit")
+
+Results_M1<-fit
+
+table(Results_M1$adj.P.Val<0.05)
+```
+
+
+#### M2 Visit####
+
+```{r}
+
+  mod_M2=model.matrix(~+log2(Covar_CRH2$m2_crh)
+                   +Covar_CRH2$m2_crh_gestage
+                   #Maternal Variables
+                   +Covar_CRH2$h_m_delivery_age
+                   +Covar_CRH2$h_m_prepreg_bmi
+                   +Covar_CRH2$ScaledSES
+                   +Covar_CRH2$PC1 #maternal ancestry
+                   +Covar_CRH2$PC2
+                   +Covar_CRH2$PC3
+                   +Covar_CRH2$m2_cotinine
+                   
+                   #Precision Variables
+                   +Covar_CRH2$SeqBatch
+                   +Covar_CRH2$LaborStatus
+                   +Covar_CRH2$DelMethod
+                   +Covar_CRH2$FetalSex
+                  
+                   #Maternal Variables
+                   +Covar_CRH2$Preeclampsia
+                   +Covar_CRH2$GDM
+                   +Covar_CRH2$PPROM)
+```
+
+#Limma Voom
+```{r}
+  par(mfrow=c(1,1))
+  v<-voom(M2_RNASeq, mod_M2,plot=TRUE) 
+  designMatrix<-v$design
+fit <- eBayes(lmFit(v, designMatrix))
+fit<-topTable(fit, coef=2,number=dim(fit)[1],adjust.method="BH") 
+par(mfrow=c(1,2))
+hist(fit$P.Value,breaks=20,main="CRH_M2 Visit")
+
+Results_M2<-fit
+
+table(Results_M2$adj.P.Val<0.05)
+```
+
+
+# CRH at birth values ####
+# Create Model Matrix
+```{r}
+  mod_M3=model.matrix(~Covar_CRH2$Imputed_LogCRHDelivery #This value was already log transformed
+                   #Maternal Variables
+                   +Covar_CRH2$h_m_delivery_age
+                   +Covar_CRH2$h_m_prepreg_bmi
+                   +Covar_CRH2$MatEducation
+                   +Covar_CRH2$PC1 #maternal ancestry
+                   +Covar_CRH2$PC2
+                   +Covar_CRH2$PC3
+                   +Covar_CRH2$m2_cotinine
+                   
+                   #Precision Variables
+                   +Covar_CRH2$SeqBatch
+                   +Covar_CRH2$LaborStatus
+                   +Covar_CRH2$DelMethod
+                   +Covar_CRH2$FetalSex
+                  
+                   #Maternal Variables
+                   +Covar_CRH2$Preeclampsia
+                   +Covar_CRH2$GDM
+                   +Covar_CRH2$PPROM)
+
+```
+
+#Limma Voom
+```{r}
+  par(mfrow=c(1,1))
+  v<-voom(M2_RNASeq, mod_M3,plot=TRUE) 
+  designMatrix<-v$design
+fit <- eBayes(lmFit(v, designMatrix))
+fit<-topTable(fit, coef=2,number=dim(fit)[1],adjust.method="BH") 
+par(mfrow=c(1,2))
+hist(fit$P.Value,breaks=20,main="Imputed Delivery CRH")
+
+Results_Delivery<-fit
+
+table(Results_Delivery$adj.P.Val<0.05)
+```
+
+
+# Gestational Age at Birth Values ####
+# Create Model Matrix
+```{r}
+  mod_GA=model.matrix(~Covar_CRH2$h_birth_gestage
+                   #Maternal Variables
+                   +Covar_CRH2$h_m_delivery_age
+                   +Covar_CRH2$h_m_prepreg_bmi
+                   +Covar_CRH2$MatEducation
+                   +Covar_CRH2$PC1 #maternal ancestry
+                   +Covar_CRH2$PC2
+                   +Covar_CRH2$PC3
+                   +Covar_CRH2$m2_cotinine
+                   
+                   #Precision Variables
+                   +Covar_CRH2$SeqBatch
+                   +Covar_CRH2$LaborStatus
+                   +Covar_CRH2$DelMethod
+                   +Covar_CRH2$FetalSex
+                  
+                   #Maternal Variables
+                   +Covar_CRH2$Preeclampsia
+                   +Covar_CRH2$GDM
+                   +Covar_CRH2$PPROM)
+
+```
+
+#Limma Voom
+```{r}
+  par(mfrow=c(1,1))
+  v<-voom(M2_RNASeq, mod_GA,plot=TRUE) 
+  designMatrix<-v$design
+fit <- eBayes(lmFit(v, designMatrix))
+fit<-topTable(fit, coef=2,number=dim(fit)[1],adjust.method="BH") 
+par(mfrow=c(1,2))
+hist(fit$P.Value,breaks=20,main="Gestational Age")
+
+Results_GestationalAge<-fit
+
+table(Results_GestationalAge$adj.P.Val<0.05)
+```
+
+
+### Delta pCRH 
+```{r}
+  mod_deltaPCRH=model.matrix(~Covar_CRH2$Delta_LogCRH#This value was already log transformed
+                   #Maternal Variables
+                   +Covar_CRH2$h_m_delivery_age
+                   +Covar_CRH2$h_m_prepreg_bmi
+                   +Covar_CRH2$MatEducation
+                   +Covar_CRH2$PC1 #maternal ancestry
+                   +Covar_CRH2$PC2
+                   +Covar_CRH2$PC3
+                   +Covar_CRH2$m2_cotinine
+                   
+                   #Precision Variables
+                   +Covar_CRH2$SeqBatch
+                   +Covar_CRH2$LaborStatus
+                   +Covar_CRH2$DelMethod
+                   +Covar_CRH2$FetalSex
+                  
+                   #Maternal Variables
+                   +Covar_CRH2$Preeclampsia
+                   +Covar_CRH2$GDM
+                   +Covar_CRH2$PPROM)
+
+```
+
+#Limma Voom
+```{r}
+  par(mfrow=c(1,1))
+  v<-voom(M2_RNASeq, mod_deltaPCRH,plot=TRUE) 
+  designMatrix<-v$design
+fit <- eBayes(lmFit(v, designMatrix))
+fit<-topTable(fit, coef=2,number=dim(fit)[1],adjust.method="BH") 
+par(mfrow=c(1,2))
+hist(fit$P.Value,breaks=20,main="Gestational Age")
+
+Results_deltaPCRH<-fit
+
+table(Results_deltaPCRH$adj.P.Val<0.05)
+```
+
+
+
+# Nice Volcano Plot
+```{r}
+HeatmapColors<-rev(brewer.pal(11, "RdBu"))#Blue is lower, Red is  Higher
+
+
+VPlot<-function(Results,Title,MaxY,X){
+  sig<-subset(Results,adj.P.Val<0.05)
+  sig$SYMBOL<-as.character(sig$genes)
+
+  sig_up<-subset(sig,logFC>0)
+  sig_up<-sig_up[order(sig_up$P.Value,decreasing=F),]
+  sig_up_top<-sig_up[1:5,]
+
+  sig_down<-subset(sig,logFC<0)
+  sig_down<-sig_down[order(sig_down$P.Value,decreasing=F),]
+  sig_down_top<-sig_down[1:5,]
+
+  Results$Color<-Results$adj.P.Val
+
+  plot(Results$logFC,-log(Results$P.Value),ylim=c(0,MaxY),xlim=c(-1,1),pch=20,cex=0.35,main=Title,ylab="-Log P Value",xlab="Effect Estimate",col="grey60")
+
+  
+#  gap.plot(Results$logFC,-log(Results$P.Value),gap = c(30, 60),gap.axis = "y", ylim=c(0,70),xlim=c(-1,1),pch=20,cex=0.75,main=Title,ylab="-Log P Value",xlab="Effect Estimate",col="grey60")
+   
+  abline(h=c(-log(0.05),-log(0.05/13918)),lwd=1,lty=2,col="grey50")
+  points(sig_up$logFC,-log(sig_up$P.Value),pch=20,cex=1,col=HeatmapColors[9])
+  text(sig_up_top$logFC,-log(sig_up_top$P.Value),sig_up_top$SYMBOL,cex=1.5,col=HeatmapColors[10],pos=4)
+  points(sig_down$logFC,-log(sig_down$P.Value),pch=20,cex=1,col=HeatmapColors[3])
+  text(sig_down_top$logFC,-log(sig_down_top$P.Value),sig_down_top$SYMBOL,cex=1.5,col=HeatmapColors[2],pos=2)
+}
+
+
+par(mfrow=c(1,3))
+VPlot(Results_M1,"CRH M1 Visit",60,1)
+VPlot(Results_M2,"CRH M2 Visit",60,1)
+VPlot(Results_Delivery,"Delta CRH",60,1)
+
+par(mfrow=c(1,1))
+VPlot(Results_GestationalAge,"GestationalAge",20,1)
+
+```
+
+# Pull out significant DEGs
+#Save Results 
+```{r}
+Results_M1_Sig<-subset(Results_M1,adj.P.Val<0.05)
+table(Results_M1_Sig$logFC<0)
+
+
+Results_M2_Sig<-subset(Results_M2,adj.P.Val<0.05)
+table(Results_M2_Sig$logFC<0)
+
+
+Results_Delivery_Sig<-subset(Results_Delivery,adj.P.Val<0.05)
+table(Results_Delivery_Sig$logFC<0)
+
+Results_GestationalLength_Sig<-subset(Results_GestationalAge,adj.P.Val<0.05)
+table(Results_GestationalLength_Sig$logFC<0)
+
+```
+
+
+# Write Supplemental Table of All Results for Paper
+```{r}
+SuppTable<-merge(Results_M1_Sig,Results_M2_Sig,by="genes",all=T)
+SuppTable<-merge(SuppTable,Results_Delivery_Sig,by="genes",all=T)
+write.csv(SuppTable,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/SupplementalTableAllCRH_252024.csv")
+```
+
+
+#Save Results 
+```{r}
+
+save(Results_M1_Sig,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M1_CRH_Sig.RData")
+#write.csv(Results_M1_Sig,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/M1_CRH_Sig.csv")
+
+
+save(Results_M2_Sig,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/M2_CRH_Sig.RData")
+#write.csv(Results_M2_Sig,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/M2_CRH_Sig.csv")
+
+
+#write.csv(Results_Delivery_Sig,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/Delivery_CRH_Sig.csv")
+save(Results_Delivery_Sig,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/Delivery_CRH_Sig.RData")
+
+#write.csv(Results_GestationalLength_Sig,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/GestationalLength_Sig.csv")
+save(Results_GestationalLength_Sig,file="/Volumes/Active/paquette_a/apaquette/ECHOPathways_CRHAnalysis/IntermediateData/GestLength_Sig.RData")
+```
+
+# UpsetR Plot
+```{r}
+UpsetPrep<-function(LIMMAResults,Label){
+tmp<-as.character(LIMMAResults$genes)
+tmp<-as.data.frame(cbind(tmp,rep(1,length(tmp))))
+colnames(tmp)<-c("Gene",Label)
+tmp[,2]<-as.numeric(tmp[,2])
+tmp
+}
+
+#M1
+Up_M1<-subset(Results_M1_Sig,logFC>0)
+UpM1_Genes<-UpsetPrep(Up_M1,"Increased_M1")
+
+Down_M1<-subset(Results_M1_Sig,logFC<0)
+DownM1_Genes<-UpsetPrep(Down_M1,"Decreased_M1")
+
+Up_M2<-subset(Results_M2_Sig,logFC>0)
+UpM2_Genes<-UpsetPrep(Up_M2,"Increased_M2")
+
+Down_M2<-subset(Results_M2_Sig,logFC<0)
+DownM2_Genes<-UpsetPrep(Down_M2,"Decreased_M2")
+
+Up_M3<-subset(Results_Delivery_Sig,logFC>0)
+UpM3_Genes<-UpsetPrep(Up_M3,"Increased_Delivery")
+
+Down_M3<-subset(Results_Delivery_Sig,logFC<0)
+DownM3_Genes<-UpsetPrep(Down_M3,"Decreased_Delivery")
+
+
+
+#Merge All Together
+
+Input<-merge(UpM1_Genes,DownM1_Genes,by="Gene",all=T)
+Input<-merge(Input,UpM2_Genes,by="Gene",all=T)
+Input<-merge(Input,DownM2_Genes,by="Gene",all=T)
+Input<-merge(Input,UpM3_Genes,by="Gene",all=T)
+Input<-merge(Input,DownM3_Genes,by="Gene",all=T)
+
+rownames(Input)<-Input$Gene
+Input<-Input[,-1]
+Input[is.na(Input)] <- 0
+```
+#Make Plot
+
+```{r}
+SubColors<-brewer.pal(12, "Set2")#
+ColorsMain<-rep("gray70",8)
+ColorsMain[c(1,2)]<-"dodgerblue2"
+ColorsMain[c(3,4)]<-"brown1"
+ColorsMain[c(5,6)]<-"darkgoldenrod1"
+ColorsMain[c(7,8,9,10,11,12)]<-SubColors[1:6] 
+
+ColorsBar<-rep(c(HeatmapColors[9],HeatmapColors[3]),3)
+
+par(mar = c(10, 4.1, 4.1, 2.1))
+upset(Input,
+      sets=colnames(Input),
+      keep.order=T, #Leave to keep the bars in ther igh t order
+      text.scale=1.25,
+      matrix.dot.alpha=0.4,
+      #mb.ratio=c(0.8,0.2),
+      group.by="degree",
+     sets.bar.color=ColorsBar,
+    #  main.bar.color=ColorsMain,
+      set_size.show=T,
+      set_size.numbers_size=10
+)
+```
+
+
+## Heatmap-Do this only with the candidate genes
+```{r}
+
+Sig_M1<-as.data.frame(Results_M1_Sig[,2])
+rownames(Sig_M1)<-Results_M1_Sig$genes
+
+Sig_M2<-as.data.frame(Results_M2_Sig[,2])
+rownames(Sig_M2)<-Results_M2_Sig$genes
+
+Sig_M3<-as.data.frame(Results_Delivery_Sig[,2])
+rownames(Sig_M3)<-Results_Delivery_Sig$genes
+
+Sig_GL<-as.data.frame(Results_GestationalLength_Sig[,2])
+rownames(Sig_GL)<-Results_GestationalLength_Sig$genes
+
+Sig_Heatmap1<-merge(Sig_M1,Sig_M2,by='row.names',all=T)
+rownames(Sig_Heatmap1)<-Sig_Heatmap1$Row.names
+Sig_Heatmap1<-Sig_Heatmap1[,-1]
+
+Sig_Heatmap1<-merge(Sig_Heatmap1,Sig_M3,by='row.names',all=T)
+rownames(Sig_Heatmap1)<-Sig_Heatmap1$Row.names
+Sig_Heatmap1<-Sig_Heatmap1[,-1]
+
+Sig_Heatmap1<-merge(Sig_Heatmap1,Sig_GL,by='row.names',all=F)
+rownames(Sig_Heatmap1)<-Sig_Heatmap1$Row.names
+Sig_Heatmap1<-Sig_Heatmap1[,-1]
+
+
+
+colnames(Sig_Heatmap1)<-c("M1_LogFC","M2_LogFC","Delivery_LogFC","GA_LogFC")
+
+
+
+Sig_Heatmap2<-Sig_Heatmap1[order(Sig_Heatmap1$M1_LogFC),]
+Sig_Heatmap2<-Sig_Heatmap2[order(Sig_Heatmap2$M2_LogFC),]
+Sig_Heatmap2<-Sig_Heatmap2[order(Sig_Heatmap2$Delivery_LogFC),]
+Sig_Heatmap2<-Sig_Heatmap2[order(Sig_Heatmap2$GA_LogFC),]
+
+Sig_Heatmap2$Counts<-rowSums(is.na(Sig_Heatmap2))
+Sig_Heatmap2<-Sig_Heatmap2[order(Sig_Heatmap2$Counts,decreasing=F),]
+
+Sig_Heatmap2<-as.matrix(Sig_Heatmap2[,-5])
+Sig_Heatmap2[is.na(Sig_Heatmap2)] <- 0
+
+##Colors
+paletteLength <- 33
+myColor <- colorRampPalette(c("blue4","blue1","white","red1","red4"))(paletteLength+2)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(-0.4, -0.00002, length.out=ceiling(paletteLength/2)+1),0,
+              seq(0.00002,0.33, length.out=floor(paletteLength/2)))
+
+
+
+pheatmap(Sig_Heatmap2, display_numbers = F,
+         scale="none",
+         col=myColor,
+         breaks=myBreaks,
+         cluster_rows = T,
+         cluster_cols = F,
+        # gaps_col=2,
+         treeheight_row = 0,
+         treeheight_col = 0,
+         #annotation_row = Annot,
+       # annotation_colors = annotation_colors,
+         cellwidth=20, #Change tehe for size
+         cellheight=10) #change these for size
+
+
+par(mfrow=c(1,1),mar = c(0.5, 0.5, 0.5, 0.5))
+
+
+```
+# Pathway Analysis ####
+
+
+# Prepare KEGG Database
+-Adapted from SYLs code
+- Removed human disease pathways by consulting the most updated version of KEGG: https://www.genome.jp/kegg/pathway.html
+-Human disease pathways are >0500
+-drug development pathways are 0700 and above
+
+```{r}
+keggs <- getGeneKEGGLinks()
+
+kegglst <- split(keggs$GeneID, keggs$PathwayID)
+
+keggmapper <- read.table("http://rest.kegg.jp/list/pathway/hsa/", sep = "\t", quote = "\"", fill = TRUE, comment.char = "")
+keggmapper[,2] <- sapply(strsplit(keggmapper[,2], " - "), function(x) gsub(" ", "_", paste(x[-length(x)], collapse = " ")))
+
+
+names(kegglst)
+
+names(kegglst)<-gsub("path:","", names(kegglst))
+
+# Remove Human Disease Pathways
+#https://www.genome.jp/kegg/pathway.html#
+
+keggmapper
+
+
+#Get rid of 86-metabolic pathways is too broad
+
+keggmapper<-keggmapper[1:256,]
+
+#Map to pathwayas
+kegglst<-kegglst[keggmapper$V1]
+names(kegglst)<-keggmapper$V2
+
+
+#keggmapper <- setNames(keggmapper[,2], keggmapper[,1])
+#names(kegglst) <- keggmapper[names(kegglst)]
+
+
+# Take a look at the names of the kegg list and make sure these are the pathways you want
+names(kegglst)
+```
+
+#Map CANDLE RNA Sequencing Data to Entrez IDs
+```{r}
+#Map CANDLE RNA Sequencing Data to Entrez IDs
+
+#The results are all sorted by log FoldChange, so we need to resort so that they can all be the same
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+annot <- biomaRt::getBM(filters= "ensembl_gene_id", attributes=c("ensembl_gene_id","entrezgene_id"), values=rownames(M1_RNASeq$counts), mart=mart)
+
+#Note: want different attributes? -use "listAttributes()" to see  what is  available
+#Pathway enrichment with KEGG  requires entrez IDs
+# Ensembl ids are more stable
+
+annot <-na.omit(annot )
+annot <-annot [!duplicated(annot$ensembl_gene_id),]
+annot <-annot [!duplicated(annot$entrezgene_id),]
+rownames(annot )<-as.character(annot$ensembl_gene_id)
+x<-intersect(rownames(M1_RNASeq$counts),rownames(annot))
+annot<-annot[x,]
+#C_RNASeq$counts<-C_RNASeq$counts[x,]
+#table(rownames(C_RNASeq$counts)==rownames(annot))
+#rownames(C_RNASeq$counts)<-as.character(annot$entrezgene_id)
+
+
+M1_RNASeq_Entrez<-M1_RNASeq[annot$ensembl_gene_id,]
+rownames(M1_RNASeq_Entrez)<-annot$entrezgene_id
+
+```
+#m2 Annotation file
+```{r}
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+annot <- biomaRt::getBM(filters= "ensembl_gene_id", attributes=c("ensembl_gene_id","entrezgene_id"), values=rownames(M2_RNASeq$counts), mart=mart)
+
+#Note: want different attributes? -use "listAttributes()" to see  what is  available
+#Pathway enrichment with KEGG  requires entrez IDs
+# Ensembl ids are more stable
+
+annot <-na.omit(annot )
+annot <-annot [!duplicated(annot$ensembl_gene_id),]
+annot <-annot [!duplicated(annot$entrezgene_id),]
+rownames(annot )<-as.character(annot$ensembl_gene_id)
+x<-intersect(rownames(M2_RNASeq$counts),rownames(annot))
+annot<-annot[x,]
+#C_RNASeq$counts<-C_RNASeq$counts[x,]
+#table(rownames(C_RNASeq$counts)==rownames(annot))
+#rownames(C_RNASeq$counts)<-as.character(annot$entrezgene_id)
+
+
+M2_RNASeq_Entrez<-M2_RNASeq[annot$ensembl_gene_id,]
+rownames(M2_RNASeq_Entrez)<-annot$entrezgene_id
+
+```
+# Run Fry for each gene
+```{r}
+
+# Takes ~15 mintues
+M1_Fry<-fry(voom(M1_RNASeq_Entrez,mod_M1), kegglst, mod_M1, contrast=2) 
+M2_Fry<-fry(voom(M2_RNASeq_Entrez,mod_M2), kegglst, mod_M2, contrast=2) 
+M3_Fry<-fry(voom(M2_RNASeq_Entrez,mod_M3), kegglst, mod_M3, contrast=2) 
+GA_Fry<-fry(voom(M2_RNASeq_Entrez,mod_GA), kegglst, mod_GA, contrast=2) 
+```
+
+# Subset Significant Pathways
+```{r}
+M1_Fry_Sig<-subset(M1_Fry,FDR<0.05)
+M1_Fry_Sig<-M1_Fry_Sig[,-c(5:6)]
+colnames(M1_Fry_Sig)<-paste0(colnames(M1_Fry_Sig),"_M1")
+
+M2_Fry_Sig<-subset(M2_Fry,FDR<0.05)
+M2_Fry_Sig<-M2_Fry_Sig[,-c(5:6)]
+colnames(M2_Fry_Sig)<-paste0(colnames(M2_Fry_Sig),"_M2")
+
+M3_Fry_Sig<-subset(M3_Fry,FDR<0.05)
+M3_Fry_Sig<-M3_Fry_Sig[,-c(5:6)]
+colnames(M3_Fry_Sig)<-paste0(colnames(M3_Fry_Sig),"_M3")
+
+CRH_Pathways<-merge(M1_Fry_Sig,M2_Fry_Sig,by='row.names',all=T)
+rownames(CRH_Pathways)<-CRH_Pathways$Row.names
+CRH_Pathways<-merge(CRH_Pathways,M3_Fry_Sig,by='row.names',all=T)
+
+write.csv(CRH_Pathways,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/CRH_Pathwayanalysis3272023.csv")
+
+GA_Fry_Sig<-subset(GA_Fry,FDR<0.05)
+write.csv(GA_Fry_Sig,file="~/Dropbox/CRHPlacentalTranscriptome_EP/AnalysisPhase2_Winter2023/GestAge_Pathwayanalysis3272023.csv")
+
+```
+# Make dotplot of results#####
+
+```{r}
+#M1_CLean UP
+M1_Fry_Sig<-subset(M1_Fry,FDR<0.05)
+M1_Fry_Sig$size<-(-log(M1_Fry_Sig$FDR))
+M1_Fry_Sig$color<-car::recode(M1_Fry_Sig$Direction, '"Down" = "blue";"Up" = "orange"')
+M1_Fry_Sig$yloc<-1
+M1_Fry_Sig<-M1_Fry_Sig[,c(7:9)]
+colnames(M1_Fry_Sig)<-paste0(colnames(M1_Fry_Sig),"_M1")
+
+#M2_CLean UP
+M2_Fry_Sig<-subset(M2_Fry,FDR<0.05)
+M2_Fry_Sig$size<-(-log(M2_Fry_Sig$FDR))
+M2_Fry_Sig$color<-car::recode(M2_Fry_Sig$Direction, '"Down" = "blue";"Up" = "orange"')
+M2_Fry_Sig$yloc<-2
+M2_Fry_Sig<-M2_Fry_Sig[,c(7:9)]
+colnames(M2_Fry_Sig)<-paste0(colnames(M2_Fry_Sig),"_M2")
+
+#M3_CLean UP
+M3_Fry_Sig<-subset(M3_Fry,FDR<0.05)
+M3_Fry_Sig$size<-(-log(M3_Fry_Sig$FDR))
+M3_Fry_Sig$color<-car::recode(M3_Fry_Sig$Direction, '"Down" = "blue";"Up" = "orange"')
+M3_Fry_Sig$yloc<-3
+M3_Fry_Sig<-M3_Fry_Sig[,c(7:9)]
+colnames(M3_Fry_Sig)<-paste0(colnames(M3_Fry_Sig),"_M3")
+
+#GA_CLean UP
+GA_Fry_Sig<-subset(GA_Fry,FDR<0.05)
+GA_Fry_Sig$size<-(-log(GA_Fry_Sig$FDR))
+GA_Fry_Sig$color<-car::recode(GA_Fry_Sig$Direction, '"Down" = "blue";"Up" = "orange"')
+GA_Fry_Sig$yloc<-4
+GA_Fry_Sig<-GA_Fry_Sig[,c(7:9)]
+colnames(GA_Fry_Sig)<-paste0(colnames(GA_Fry_Sig),"_GA")
+
+```
+
+
+```{r}
+
+Path<-merge(M1_Fry_Sig,M2_Fry_Sig,by='row.names',all=T)
+rownames(Path)<-Path$Row.names
+Path<-Path[,-1]
+
+Path<-merge(Path,M3_Fry_Sig,by='row.names',all=T)
+rownames(Path)<-Path$Row.names
+Path<-Path[,-1]
+
+Path<-merge(Path,GA_Fry_Sig,by='row.names',all.x=T,all.y=F)
+rownames(Path)<-Path$Row.names
+Path<-Path[,-1]
+
+#Order Into KEGG Subgroups
+KEGGInfo<-read.csv("/Volumes/Active//paquette_a/apaquette/ImportantFiles/HumanKeggPathwaysAll.csv")
+Path<-merge(Path,KEGGInfo,by.x='row.names',by.y="KEGG_Name",all.x=T,all.y=F)
+
+# Check NAs
+which(is.na(Path$Kegg_Subgroup))
+Path$Row.names[(43)]
+Path$Kegg_Subgroup[43]<-"Genetic Information Processing"
+Path$Kegg_Group[43]<-"Information processing in viruses"
+
+#Order by Group, then subgroup
+
+Path<-Path[order(Path$Kegg_Subgroup),]
+Path<-Path[order(Path$Kegg_Group),]
+
+Path[,1]<-gsub("_", " ", Path[,1])
+rownames(Path)<-Path[,1]
+table(Path$Kegg_Subgroup)
+
+Path$XLoc<-1:dim(Path)[1]
+```
+
+
+```{r}
+par(mar = c(3, 22, 2, 2))
+plot(Path$yloc_M1,Path$XLoc,
+     cex=1,pch=20,
+     xlim=c(0.5,4.5),col="black",yaxt="n",xaxt="n",
+     xlab="",ylab="")
+points(Path$yloc_M1,Path$XLoc,cex=Path$size_M1/2,pch=20,
+       col=Path$color_M1)
+points(Path$yloc_M2,Path$XLoc,cex=Path$size_M2/2,pch=20,
+       col=Path$color_M2)
+points(Path$yloc_M3,Path$XLoc,cex=Path$size_M3/2,pch=20,
+       col=Path$color_M3)
+points(Path$yloc_GA,Path$XLoc,cex=Path$size_GA/2,pch=20,
+       col=Path$color_GA)
+
+
+axis(1, at = c(1,2,3,4) ,labels=c("M1","M2","M3","GA"), las=1, cex.axis=0.6)
+axis(2, at = c(1:43) ,labels=rownames(Path), las=1, cex.axis=1)
+
+
+Path$Kegg_Subgroup
+
+
+
+```
